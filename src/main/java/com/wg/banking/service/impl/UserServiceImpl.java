@@ -4,7 +4,10 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
+import com.wg.banking.model.*;
+import com.wg.banking.service.SQSMessagePublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -20,9 +23,6 @@ import com.wg.banking.exception.AdminAccountExistsException;
 import com.wg.banking.exception.UserNotFoundException;
 import com.wg.banking.filter.UsersFilter;
 import com.wg.banking.mapper.UserMapper;
-import com.wg.banking.model.Account;
-import com.wg.banking.model.Role;
-import com.wg.banking.model.User;
 import com.wg.banking.repository.UserRepository;
 import com.wg.banking.service.AccountService;
 import com.wg.banking.service.UserService; 
@@ -36,6 +36,7 @@ public class UserServiceImpl implements UserService {
 	private final UserRepository userRepository;
 	private final AccountService accountService;
 	private final PasswordEncoder passwordEncoder;
+	private final SQSMessagePublisher sqsMessagePublisher;
 
 	@Override
 	public List<UserDto> findAllUsers(UsersFilter filter, Integer pageNumber, Integer pageSize) {
@@ -65,11 +66,19 @@ public class UserServiceImpl implements UserService {
 			savedUser = userRepository.save(savedUser);
 		}
 		UserDto userDto = UserMapper.mapUser(savedUser);
+		Message message = Message.builder()
+								.id(UUID.randomUUID().toString())
+								.type(MessageType.USER_SIGNUP)
+								.receiver(savedUser.getEmail())
+								.content(ApiMessages.USER_CREATED_SUCCESSFULLY)
+								.createdAt(LocalDateTime.now())
+								.build();
+		sqsMessagePublisher.publishMessage(message);
 		return userDto;
 	}
 
 	private boolean isRoleAdmin(User user) {
-		return user.getRole() == null ? false : user.getRole().equals(Role.ADMIN);
+		return user.getRole() != null && user.getRole().equals(Role.ADMIN);
 	}
 
 	@Override
